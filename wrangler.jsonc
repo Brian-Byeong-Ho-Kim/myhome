@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "myhome",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": { "enabled": true }
+  // 인증키는 여기에 쓰지 않는다: Cloudflare 대시보드 > Workers > myhome > 설정 > 변수 및 비밀에서 ODCLOUD_KEY(비밀)로 등록
+}

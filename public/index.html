@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내집분양 · 청약 당첨 확률 계산기</title>
+<meta name="description" content="청약홈 공공데이터로 단지·주택형별 경쟁률과 당첨가점을 불러와 일반공급·특별공급 당첨 확률을 계산합니다.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: 정확하고 차분한 계산 도구, 신문 그래픽 데스크 수준
+   IDEA: 청약 모집공고문 옆에 놓는 엔지니어링 데이터시트
+   PICTURE: 큰 당첨 확률 숫자 + 물량이 갈라지는 배분 막대 + 반복 청약 누적 막대
+   COLOUR and TYPE: 코발트 타이틀 스트립, 흰 바탕, 옅은 코발트 구역 / Space Grotesk 숫자 + IBM Plex Sans KR
+   LAYOUT: 좁은 타이틀 스트립, 왼쪽 입력 / 오른쪽 결과 패널, 아래 규칙표·가정 */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#0a0d18);--ink:light-dark(#0b0f1a,#e8ecf8);--mut:light-dark(#4a5368,#9aa4bf);--zone:light-dark(#eef2ff,#121a33);--line:light-dark(#d6dcef,#25304f);--co:#1240e0;--co2:light-dark(#1240e0,#7d9bff);--hi:light-dark(#ffd84a,#ffd84a)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "IBM Plex Sans KR",system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(24px,4vw,56px) max(5vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+.strip{background:var(--co);color:#fff;padding:18px max(5vw,16px)}
+.strip .wrap{display:flex;flex-wrap:wrap;gap:6px 24px;align-items:baseline;justify-content:space-between}
+h1{font:700 clamp(26px,3.6vw,40px)/1.05 "Space Grotesk","IBM Plex Sans KR",sans-serif;margin:0;text-wrap:balance}
+h1 span{font-family:"IBM Plex Sans KR"}
+.strip p{margin:0;opacity:.85;font-size:14px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:28px;align-items:start}
+@media(max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.panel{border:1px solid var(--line);border-radius:6px;padding:20px}
+.panel+.panel{margin-top:16px}
+h2{font:600 19px/1.3 "IBM Plex Sans KR";margin:0 0 14px;display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+h2 b{font:700 22px "Space Grotesk";color:var(--co2)}
+.f{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px 14px}
+@media(max-width:520px){.f{grid-template-columns:minmax(0,1fr)}}
+label{display:block;font-size:14px;color:var(--mut);font-weight:500}
+select,input[type=number]{display:block;width:100%;margin-top:4px;min-height:44px;font:16px "IBM Plex Sans KR";color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px 10px}
+select:focus,input:focus,button:focus-visible{outline:3px solid var(--co2);outline-offset:1px}
+.seg{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 12px}
+.seg button{min-height:44px;padding:0 14px;font:500 15px "IBM Plex Sans KR";border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:4px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--co);border-color:var(--co);color:#fff}
+.hint{font-size:13px;color:var(--mut);margin:8px 0 0}
+.res{background:var(--zone);border-radius:6px;padding:22px;position:sticky;top:16px}
+@media(max-width:900px){.res{position:static}}
+.big{font:700 clamp(56px,9vw,96px)/1 "Space Grotesk";color:var(--co2);letter-spacing:-.02em;white-space:nowrap}
+.big small{font-size:.45em}
+.sub{font-size:17px;margin:6px 0 2px}
+.verdict{font-size:15px;color:var(--mut);margin:0 0 18px}
+.rows{display:grid;gap:10px;margin:0 0 20px}
+.row{display:grid;grid-template-columns:9.5em minmax(0,1fr) 5.2em;gap:10px;align-items:center;font-size:14px}
+.bar{height:14px;background:light-dark(#fff,#0a0d18);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--co2);transition:width .35s}
+.row .v{text-align:right;font:600 15px "Space Grotesk";white-space:nowrap}
+.alloc{display:flex;height:42px;border-radius:4px;overflow:hidden;margin:6px 0 8px;font:600 13px "IBM Plex Sans KR"}
+.alloc div{display:flex;align-items:center;justify-content:center;color:#fff;white-space:nowrap;overflow:hidden;transition:flex-grow .35s}
+.k{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--mut)}
+.k i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+h3{font:600 15px "IBM Plex Sans KR";margin:18px 0 8px}
+@media(prefers-reduced-motion:reduce){.bar i,.alloc div{transition:none}}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left}
+th{font-weight:600;background:var(--zone)}
+td.n{text-align:right;font-family:"Space Grotesk";white-space:nowrap}
+.cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:32px}
+@media(max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
+.cols p,.cols li{font-size:15px;max-width:68ch}
+.cols ul{padding-left:1.1em;margin:0}
+a{color:var(--co2)}
+.scroll{overflow-x:auto}
+.dj{background:var(--zone);padding-block:20px}.dj .f{grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) minmax(0,1fr)}@media(max-width:760px){.dj .f{grid-template-columns:minmax(0,1fr)!important}}.djline{margin:14px 0 8px;font-size:15px}.djline b{font-weight:600}.tag{display:inline-block;padding:1px 8px;border-radius:3px;background:var(--co);color:#fff;font-size:13px;margin-right:6px}tr.on td{background:light-dark(#dfe6ff,#1b2652)}
+@media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:8em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:7.5em;margin-inline-start:-8em;white-space:normal}.stack td:empty{display:none}.row{grid-template-columns:7.5em minmax(0,1fr) 4.6em}}
+</style>
+<script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
+</head>
+<body>
+<header class="strip"><div class="wrap"><h1>내집분양 <span style="font-weight:500;opacity:.85;font-size:.6em">청약 당첨 확률 계산기</span></h1><p>민영주택 일반공급 1순위 · 주택공급에 관한 규칙 제28조·별표1 기준</p></div></header>
+
+<section class="band dj" id="djBand" hidden><div class="wrap">
+  <h2 style="margin-bottom:10px">단지 불러오기 <span class="hint" id="djMeta" style="margin:0;font-weight:400"></span></h2>
+  <div class="f" style="grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) minmax(0,1fr)">
+    <label>단지 검색<input type="search" id="djQ" placeholder="단지명·지역 (예: 광명, 서울)" style="display:block;width:100%;margin-top:4px;min-height:44px;font:16px 'IBM Plex Sans KR';color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px 10px"></label>
+    <label>단지<select id="djS"></select></label>
+    <label>주택형<select id="djT"></select></label>
+  </div>
+  <div id="djInfo" hidden>
+    <p class="djline" id="djLine"></p>
+    <div class="scroll"><table class="stack" id="djTbl"></table></div>
+    <p class="hint" id="djNote"></p>
+  </div>
+</div></section>
+<main class="band"><div class="wrap grid">
+<div>
+  <section class="panel">
+    <h2>① 내 청약 가점 <b id="scoreOut">0 / 84</b></h2>
+    <div class="seg" role="group" aria-label="주택 소유 상태">
+      <button type="button" data-own="0" aria-pressed="true">무주택 세대</button>
+      <button type="button" data-own="1" aria-pressed="false">1주택 세대</button>
+    </div>
+    <div class="f">
+      <label>무주택기간 <span id="s1"></span><select id="mu"></select></label>
+      <label>부양가족 수 (본인 제외) <span id="s2"></span><select id="bu"></select></label>
+      <label>본인 청약통장 가입기간 <span id="s3"></span><select id="tj"></select></label>
+      <label>배우자 통장 가입기간 (50% 합산, 최대 3점)<select id="sp"></select></label>
+    </div>
+    <p class="hint">무주택기간은 만 30세 또는 그 전 혼인신고일부터 셉니다. 만 30세 미만 미혼이거나 유주택이면 0점입니다. 통장 항목은 배우자 합산 후에도 17점이 상한입니다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>② 단지·주택형 조건</h2>
+    <div class="f">
+      <label>지역 구분<select id="rg">
+        <option value="tg">투기과열지구</option>
+        <option value="cg">청약과열지역(조정대상지역)</option>
+        <option value="nm">비규제 · 수도권/광역시</option>
+        <option value="nl">비규제 · 그 외 지방</option>
+      </select></label>
+      <label>전용면적<select id="sz">
+        <option value="s">60㎡ 이하</option>
+        <option value="m" selected>60㎡ 초과 ~ 85㎡ 이하</option>
+        <option value="l">85㎡ 초과</option>
+      </select></label>
+      <label>가점제 비율 (%) — 공고문 값으로 수정 가능<input type="number" id="gr" min="0" max="100" step="1"></label>
+      <label>일반공급 세대수 (해당 주택형)<input type="number" id="nn" min="1" step="1"></label>
+      <label>예상 1순위 경쟁률 (N : 1)<input type="number" id="cr" min="0.1" step="0.1"></label>
+      <label>신청자 중 무주택 비율 (%)<input type="number" id="hr" min="1" max="100" step="1"></label>
+    </div>
+    <p class="hint" id="ruleNote"></p>
+  </section>
+
+  <section class="panel">
+    <h2>③ 가점 커트라인 추정</h2>
+    <div class="seg" role="group" aria-label="커트라인 방식">
+      <button type="button" data-cm="d" aria-pressed="true">직접 입력</button>
+      <button type="button" data-cm="e" aria-pressed="false">신청자 분포로 추정</button>
+    </div>
+    <div class="f" id="cmD">
+      <label>예상 최저 당첨가점<input type="number" id="ct" min="0" max="84" step="1"></label>
+      <label>예측 오차 (± 점)<input type="number" id="cu" min="0.5" max="15" step="0.5"></label>
+    </div>
+    <div class="f" id="cmE" hidden>
+      <label>무주택 신청자 평균 가점<input type="number" id="mu2" min="0" max="84" step="1"></label>
+      <label>가점 표준편차<input type="number" id="sd" min="1" max="30" step="1"></label>
+    </div>
+    <p class="hint" id="cutNote">청약홈 ‘청약 결과 → 당첨가점’에서 인근·같은 브랜드 단지의 같은 면적 최저 당첨가점을 찾아 넣으면 가장 정확합니다.</p>
+  </section>
+
+  <section class="panel" id="spPanel">
+    <h2>④ 특별공급 (선택) <b id="spScore"></b></h2>
+    <div class="seg" role="group" aria-label="특별공급 유형">
+      <button type="button" data-sp="none" aria-pressed="true">안 함</button>
+      <button type="button" data-sp="nh" aria-pressed="false">신혼부부</button>
+      <button type="button" data-sp="fs" aria-pressed="false">생애최초</button>
+      <button type="button" data-sp="nb" aria-pressed="false">신생아</button>
+      <button type="button" data-sp="mc" aria-pressed="false">다자녀</button>
+      <button type="button" data-sp="op" aria-pressed="false">노부모부양</button>
+    </div>
+    <div id="spBody" hidden>
+      <div class="f">
+        <label>해당 유형 배정 세대수<input type="number" id="spN" min="1" step="1"></label>
+        <label>예상 특공 경쟁률 (N : 1)<input type="number" id="spR" min="0.1" step="0.1"></label>
+      </div>
+      <div class="f" id="spTier" style="margin-top:12px">
+        <label><span id="incLbl">월평균 소득 구간</span><select id="inc"></select></label>
+        <label id="kidsW">미성년 자녀 수 (태아 포함)<select id="kids">
+          <option value="0">없음 (2순위)</option><option value="1">1명</option><option value="2">2명</option><option value="3">3명 이상</option></select></label>
+        <label id="marW">혼인·자녀<select id="mar">
+          <option value="1">기혼이거나 자녀 있음</option><option value="0">미혼·무자녀 (추첨 30%만)</option></select></label>
+      </div>
+      <div id="spMc" class="f" style="margin-top:12px">
+        <label>미성년 자녀 수<select id="mcK"><option value="30">2명 (30점)</option><option value="35">3명 (35점)</option><option value="40">4명 이상 (40점)</option></select></label>
+        <label>영유아(만 6세 미만) 자녀<select id="mcY"><option value="0">없음 (0점)</option><option value="5">1명 (5점)</option><option value="10">2명 (10점)</option><option value="15">3명 이상 (15점)</option></select></label>
+        <label>세대 구성<select id="mcG"><option value="0">해당 없음 (0점)</option><option value="5">3세대 이상 또는 한부모 (5점)</option></select></label>
+        <label>무주택기간<select id="mcH"><option value="0">1년 미만 (0점)</option><option value="10">1~5년 (10점)</option><option value="15">5~10년 (15점)</option><option value="20">10년 이상 (20점)</option></select></label>
+        <label>해당 시·도 거주기간<select id="mcR"><option value="0">1년 미만 (0점)</option><option value="5">1~5년 (5점)</option><option value="10">5~10년 (10점)</option><option value="15">10년 이상 (15점)</option></select></label>
+        <label>청약통장 가입기간<select id="mcT"><option value="0">10년 미만 (0점)</option><option value="5">10년 이상 (5점)</option></select></label>
+      </div>
+      <div class="f" id="spCut" style="margin-top:12px">
+        <label><span id="spCutLbl">예상 커트라인</span><input type="number" id="spC" min="0" max="100" step="1"></label>
+        <label>예측 오차 (± 점)<input type="number" id="spU" min="0.5" max="15" step="0.5"></label>
+      </div>
+      <details id="spAss" style="margin-top:12px"><summary style="cursor:pointer;font-size:14px;min-height:32px">경쟁자 분포 가정 (청약홈 결과로 바꿀 수 있음)</summary>
+        <div class="f" style="margin-top:10px">
+          <label>우선공급 소득 기준 이하 신청자 (%)<input type="number" id="f1" min="0" max="100" step="1"></label>
+          <label>일반공급 소득 기준 이하 (추가분 %)<input type="number" id="f2" min="0" max="100" step="1"></label>
+          <label id="dKW">자녀 수 분포 — 0/1/2/3+명 (%)<input type="text" id="dK" inputmode="numeric" style="display:block;width:100%;margin-top:4px;min-height:44px;font:16px 'IBM Plex Sans KR';color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px 10px"></label>
+          <label id="dSW">미혼·무자녀 신청자 (%)<input type="number" id="dS" min="0" max="100" step="1"></label>
+        </div>
+      </details>
+      <p class="hint" id="spNote"></p>
+    </div>
+  </section>
+</div>
+
+<aside class="res" aria-live="polite">
+  <div class="big" id="pBig">0<small>%</small></div>
+  <p class="sub" id="pOdds"></p>
+  <p class="verdict" id="pVerdict"></p>
+
+  <div id="spRes" hidden><h3 id="spResT" style="margin-top:0"></h3><div class="rows" id="spRows"></div><h3>일반공급 (특공 낙첨 시)</h3></div>
+  <div class="rows" id="pRows"></div>
+
+  <h3>물량이 나뉘는 방식</h3>
+  <div class="alloc" id="alloc"></div>
+  <div class="k" id="allocKey"></div>
+
+  <h3>같은 조건으로 여러 번 넣으면 (1회 이상 당첨)</h3>
+  <div class="rows" id="rep"></div>
+  <p class="hint">각 청약을 독립 시행으로 보고 1 − (1 − p)ⁿ 로 계산합니다. 규제지역 당첨 시 재당첨 제한이 생기므로 실제로는 당첨 즉시 멈추게 됩니다.</p>
+</aside>
+</div></main>
+
+<section class="band" style="background:var(--zone)"><div class="wrap cols" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))">
+  <div>
+    <h2>가점제 · 추첨제 비율 (일반공급)</h2>
+    <div class="scroll"><table class="stack">
+      <thead><tr><th>지역</th><th>60㎡ 이하</th><th>60~85㎡</th><th>85㎡ 초과</th></tr></thead>
+      <tbody>
+        <tr><td>투기과열지구</td><td>가점 40 · 추첨 60</td><td>가점 70 · 추첨 30</td><td>가점 80 · 추첨 20</td></tr>
+        <tr><td>청약과열지역</td><td>가점 40 · 추첨 60</td><td>가점 70 · 추첨 30</td><td>가점 50 · 추첨 50</td></tr>
+        <tr><td>비규제지역</td><td colspan="2">가점 40% 이하 (시장·군수·구청장이 정함)</td><td>전량 추첨</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">투기과열지구·청약과열지역·수도권·광역시는 추첨 물량의 75%(올림)를 무주택 세대에 먼저 배정하고, 나머지를 무주택 낙첨자와 1주택 세대가 함께 추첨합니다. 가점제에서 떨어진 사람은 자동으로 추첨 대상이 됩니다.</p>
+  </div>
+  <div>
+    <h2>민영주택 특별공급 (2026. 6. 15. 개정 이후)</h2>
+    <div class="scroll"><table class="stack">
+      <thead><tr><th>유형</th><th>물량 (건설량 대비)</th><th>당첨자 선정</th></tr></thead>
+      <tbody>
+        <tr><td>신혼부부</td><td>15% 범위</td><td>우선 50%(소득 100%·맞벌이 120%) → 일반 20%(140%·160%) → 추첨 30%. 순위 안에서는 자녀 있는 가구가 1순위, 자녀 많은 순, 같으면 추첨</td></tr>
+        <tr><td>생애최초</td><td>약 7% (종전 9% 중 2%가 신생아로 이동)</td><td>우선 50%(130%) → 일반 20%(160%) → 추첨 30%. 각 단계는 추첨. 미혼·무자녀는 추첨 30%만, 1인 가구는 60㎡ 이하만</td></tr>
+        <tr><td>신생아</td><td>10% 범위</td><td>2세 미만 자녀(태아·입양 포함), 혼인기간 무관. 우선 50% → 일반 20% → 추첨 30%, 소득 기준은 생애최초와 같음</td></tr>
+        <tr><td>다자녀</td><td>10%</td><td>미성년 자녀 2명 이상. 100점 배점표 고득점 순</td></tr>
+        <tr><td>노부모부양</td><td>3%</td><td>만 65세 이상 직계존속 3년 이상 부양 세대주. 일반공급 가점(84점) 순</td></tr>
+        <tr><td>기관추천</td><td>10%</td><td>기관 추천을 받아야 해 계산에서 제외</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">신혼부부·생애최초·신생아는 전용 85㎡ 이하에만 있습니다. 특공과 일반공급은 같은 단지에 함께 넣을 수 있고, 특공에 당첨되면 일반공급 신청은 무효가 됩니다. 실제 배정 세대수는 단지마다 달라 공고문 숫자를 넣는 것이 정확합니다.</p>
+  </div>
+  <div>
+    <h2>계산 방식과 한계</h2>
+    <ul>
+      <li><b>가점제 단계</b> — 내 점수가 커트라인보다 높을 확률을 정규분포로 계산합니다. 분포 추정 모드에서는 무주택 신청자 중 상위 (가점 물량 ÷ 무주택 신청자) 지점을 커트라인으로 봅니다.</li>
+      <li><b>추첨 단계</b> — 가점 당첨자를 뺀 나머지 신청자가 추첨 풀입니다. 1주택 세대는 규제지역 가점제에 참여하지 못하므로 추첨만 계산합니다.</li>
+      <li>동점이면 통장 장기가입자가 우선이라 커트라인과 같은 점수는 절반 확률로 처리했습니다.</li>
+      <li>특별공급, 해당지역 우선공급(예: 서울 거주자 우선), 예비당첨 순번, 2주택 이상 세대는 반영하지 않았습니다. 해당지역 경쟁률을 넣으면 가장 현실에 가깝습니다.</li>
+      <li>결과는 추정치입니다. 실제 자격과 점수는 청약홈과 입주자모집공고문으로 확인하세요.</li>
+    </ul>
+    <p class="hint">기준: 주택공급에 관한 규칙(2026. 6. 15. 시행본) 제28조·별표1. 처음 화면의 값은 예시입니다.</p>
+  </div>
+</div></section>
+
+<footer class="band" style="padding-block:24px;font-size:14px;color:var(--mut)"><div class="wrap">
+  <p style="margin:0 0 6px">내집분양은 개인이 만든 참고용 계산기이며 국토교통부·한국부동산원·마이홈포털 등 공식 기관 사이트가 아닙니다. 자격과 점수, 당첨 여부는 <a href="https://www.applyhome.co.kr" target="_blank" rel="noopener">청약홈</a>과 입주자모집공고문으로 확인하세요.</p>
+  <p style="margin:0">데이터 출처: 한국부동산원 청약홈 분양정보 조회 서비스, 청약접수 경쟁률 및 특별공급 신청현황 조회 서비스 (공공데이터포털).</p>
+</div></footer>
+<script>
+{
+const $=id=>document.getElementById(id);
+const opt=(el,arr)=>{el.innerHTML=arr.map(([v,t])=>`<option value="${v}">${t}</option>`).join('')};
+// 무주택기간: 0 해당없음, 1년 미만 2점, 1년마다 +2, 15년 이상 32
+const MU=[[0,'해당 없음 (0점)'],[2,'1년 미만 (2점)']];
+for(let y=1;y<15;y++)MU.push([2+2*y,`${y}년 이상 ~ ${y+1}년 미만 (${2+2*y}점)`]);
+MU.push([32,'15년 이상 (32점)']);
+const BU=[0,1,2,3,4,5,6].map(n=>[5+5*n,`${n===6?'6명 이상':n+'명'} (${5+5*n}점)`]);
+const TJ=[[1,'6개월 미만 (1점)'],[2,'6개월 ~ 1년 미만 (2점)']];
+for(let y=1;y<15;y++)TJ.push([y+2,`${y}년 이상 ~ ${y+1}년 미만 (${y+2}점)`]);
+TJ.push([17,'15년 이상 (17점)']);
+const SP=[[0,'없음 / 미가입 (0점)'],[1,'1년 미만 (+1점)'],[2,'1년 이상 ~ 2년 미만 (+2점)'],[3,'2년 이상 (+3점)']];
+opt($('mu'),MU);opt($('bu'),BU);opt($('tj'),TJ);opt($('sp'),SP);
+
+const RATIO={tg:{s:40,m:70,l:80},cg:{s:40,m:70,l:50},nm:{s:40,m:40,l:0},nl:{s:40,m:40,l:0}};
+const ids=['mu','bu','tj','sp','rg','sz','gr','nn','cr','hr','ct','cu','mu2','sd','spN','spR','inc','kids','mar','mcK','mcY','mcG','mcH','mcR','mcT','spC','spU','f1','f2','dK','dS'];
+const DEF={mu:16,bu:15,tj:10,sp:3,rg:'tg',sz:'m',gr:70,nn:100,cr:50,hr:80,ct:62,cu:3,mu2:48,sd:12,own:0,cm:'d',
+  spT:'none',spN:33,spR:30,inc:0,kids:1,mar:1,mcK:30,mcY:5,mcG:0,mcH:15,mcR:10,mcT:0,spC:70,spU:3,f1:45,f2:30,dK:'45,35,15,5',dS:30};
+// 민영 특공 건설량 비율 (2026.6.15 이후). 일반공급 ≈ 100-10(기관)-10(다자녀)-15-7-3-10 = 45%
+const SPT={nh:{n:'신혼부부',r:15,small:1},fs:{n:'생애최초',r:7,small:1},nb:{n:'신생아',r:10,small:1},mc:{n:'다자녀',r:10},op:{n:'노부모부양',r:3}};
+const GEN=45;
+const INC={nh:['우선 기준 이하 (100%, 맞벌이 120%)','일반 기준 이하 (140%, 맞벌이 160%)','기준 초과 (추첨 30%만)'],
+  fs:['우선 기준 이하 (130%)','일반 기준 이하 (160%)','기준 초과 (추첨 30%, 자산 기준 충족 시)']};
+INC.nb=INC.fs;
+opt($('inc'),INC.nh.map((t,i)=>[i,t]));
+let st={...DEF};
+try{const s=JSON.parse(localStorage.getItem('cy-calc')||'null');if(s)st={...DEF,...s}}catch(e){}
+ids.forEach(k=>{$(k).value=st[k]});
+
+const erf=x=>{const s=Math.sign(x);x=Math.abs(x);const t=1/(1+.3275911*x);const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-.284496736)*t+.254829592)*t*Math.exp(-x*x);return s*y};
+const Phi=x=>.5*(1+erf(x/Math.SQRT2));
+const invPhi=p=>{ // Acklam
+  const a=[-39.69683028665376,220.9460984245205,-275.9285104469687,138.357751867269,-30.66479806614716,2.506628277459239],
+  b=[-54.47609879822406,161.5858368580409,-155.6989798598866,66.80131188771972,-13.28068155288572],
+  c=[-.007784894002430293,-.3223964580411365,-2.400758277161838,-2.549732539343734,4.374664141464968,2.938163982698783],
+  d=[.007784695709041462,.3224671290700398,2.445134137142996,3.754408661907416];
+  if(p<=0)return-8;if(p>=1)return 8;const pl=.02425;let q,r;
+  if(p<pl){q=Math.sqrt(-2*Math.log(p));return(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)}
+  if(p>1-pl){q=Math.sqrt(-2*Math.log(1-p));return-(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)}
+  q=p-.5;r=q*q;return(((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1)};
+const pct=p=>p>=.995?'99%+':p>=.1?(p*100).toFixed(0)+'%':p>=.01?(p*100).toFixed(1)+'%':p>0?(p*100).toFixed(2)+'%':'0%';
+const num=(k,lo,hi)=>{let v=parseFloat($(k).value);if(!isFinite(v))v=DEF[k];return Math.min(hi,Math.max(lo,v))};
+
+function calc(){
+  ids.forEach(k=>st[k]=$(k).value);
+  try{localStorage.setItem('cy-calc',JSON.stringify(st))}catch(e){}
+  const own=+st.own, reg=st.rg, regulated=reg==='tg'||reg==='cg', prio=reg!=='nl';
+  // 가점
+  const mu=own?0:+st.mu, tj=Math.min(17,+st.tj+ +st.sp), score=mu+ +st.bu+tj;
+  $('mu').disabled=!!own;
+  $('scoreOut').textContent=`${score} / 84`;
+  // 물량
+  const N=Math.round(num('nn',1,1e5)), g=num('gr',0,100)/100, A=Math.max(1,Math.round(N*num('cr',.1,1e4))), h=num('hr',1,100)/100;
+  const G=Math.round(N*g), L=N-G, H=Math.max(1,Math.round(A*h)), O=A-H;
+  const canGa=!(own&&regulated)&&G>0;
+  // 커트라인
+  let cut,unc;
+  if(st.cm==='d'){cut=num('ct',0,84);unc=num('cu',.5,15)}
+  else{const m=num('mu2',0,84),sd=num('sd',1,30);const share=Math.min(1,G/H);cut=share>=1?0:Math.max(0,Math.min(84,m+sd*invPhi(1-share)));unc=Math.max(1.5,sd*.15)}
+  $('cutNote').textContent=st.cm==='d'?'청약홈 ‘청약 결과 → 당첨가점’에서 인근 단지의 같은 면적 최저 당첨가점을 찾아 넣으면 가장 정확합니다.':`추정 커트라인 약 ${cut.toFixed(0)}점 (무주택 신청자 ${H.toLocaleString()}명 중 상위 ${G}명). 평균·편차는 예시값이니 인근 단지 결과로 맞추세요.`;
+  let Pg=0;
+  if(A<=N)Pg=0;else if(canGa)Pg=G>=H&&!own?1:Phi((score-cut+.5)/unc);
+  // 추첨
+  let P1=0,P2=0,L1=0,L2=L,PL=0;
+  if(A<=N){PL=1}
+  else if(L>0){
+    const gWin=Math.min(G,H);
+    if(prio){L1=Math.ceil(L*.75);L2=L-L1;
+      const hPool=Math.max(1,H-gWin);
+      P1=own?0:Math.min(1,L1/hPool);
+      const pool2=Math.max(1,hPool-Math.min(L1,hPool)+O);
+      P2=Math.min(1,L2/pool2);
+      PL=own?P2:P1+(1-P1)*P2;
+    }else{PL=Math.min(1,L/Math.max(1,A-gWin))}
+  }
+  const Pgen=A<=N?1:Math.min(1,Pg+(1-Pg)*PL);
+  // 특별공급
+  const sp=spCalc(score,own);
+  const P=sp?Math.min(1,sp.p+(1-sp.p)*Pgen):Pgen;
+  $('spRes').hidden=!sp;
+  if(sp){
+    $('spResT').textContent=`특별공급 · ${SPT[st.spT].n} ${pct(sp.p)}`;
+    $('spRows').innerHTML=sp.rows.map(([t,p,s])=>`<div class="row"><span>${t}<br><small style="color:var(--mut)">${s}</small></span><div class="bar"><i style="width:${Math.max(p>0?1:0,p*100)}%"></i></div><span class="v">${pct(p)}</span></div>`).join('');
+  }
+  // 출력
+  $('pBig').innerHTML=pct(P).replace('%','<small>%</small>');
+  $('pOdds').textContent=(A<=N&&!sp)?'신청자가 공급보다 적어 미달 예상 — 자격만 맞으면 당첨':P>0?`약 ${Math.max(1,Math.round(1/P)).toLocaleString()}번에 1번꼴 · `+(sp?`특공 ${pct(sp.p)} + 일반공급 ${pct(Pgen)} 합산`:`내 가점 ${score}점`):'현재 조건으로는 당첨 가능성이 거의 없습니다';
+  let v;
+  if(A<=N)v='경쟁률 1:1 이하에서는 순위·자격 요건이 관건입니다.';
+  else if(own&&regulated)v='1주택 세대는 규제지역 가점제에 참여할 수 없어 추첨 잔여 물량만 노릴 수 있습니다.';
+  else if(Pg>=.8)v='가점으로 당첨권입니다. 같은 면적의 과거 커트라인이 안정적인지만 확인하세요.';
+  else if(Pg>=.2)v='커트라인 근처입니다. 1~2점 차이로 당락이 갈리니 부양가족·배우자 통장 합산을 다시 확인하세요.';
+  else if(L>0)v=`가점으로는 어렵고 추첨(${L}세대)에 기대는 구조입니다. 추첨 비율이 큰 60㎡ 이하나 비규제 85㎡ 초과가 유리합니다.`;
+  else v='가점제 100% 물량이라 커트라인을 넘지 못하면 당첨이 어렵습니다.';
+  $('pVerdict').textContent=v;
+  const rows=[['가점제 당첨',Pg,canGa?`${G}세대, 커트라인 ≈${cut.toFixed(0)}점`:'참여 불가'],
+    prio?['추첨 · 무주택 우선',own?0:(1-Pg)*P1,`${L1}세대`]:['추첨',(1-Pg)*PL,`${L}세대`],
+    prio?['추첨 · 잔여 물량',own?P2:(1-Pg)*(1-P1)*P2,`${L2}세대`]:null].filter(Boolean);
+  $('pRows').innerHTML=rows.map(([t,p,s])=>`<div class="row"><span>${t}<br><small style="color:var(--mut)">${s}</small></span><div class="bar"><i style="width:${Math.max(p>0?1:0,p*100)}%"></i></div><span class="v">${pct(p)}</span></div>`).join('');
+  const seg=[['가점제',G,'var(--co)'],...(prio?[['무주택 우선 추첨',L1,'#4f74ff'],['잔여 추첨',L2,'#8aa2ff']]:[['추첨',L,'#4f74ff']])].filter(s=>s[1]>0);
+  $('alloc').innerHTML=seg.map(([t,n,c])=>`<div style="flex:${n} 1 0;background:${c}">${n/N>.12?n+'세대':''}</div>`).join('');
+  $('allocKey').innerHTML=seg.map(([t,n,c])=>`<span><i style="background:${c}"></i>${t} ${n}세대</span>`).join('')+`<span>신청 ${A.toLocaleString()}명</span>`;
+  $('rep').innerHTML=[1,3,5,10,20].map(n=>{const q=1-Math.pow(1-P,n);return`<div class="row"><span>${n}회</span><div class="bar"><i style="width:${q*100}%"></i></div><span class="v">${pct(q)}</span></div>`}).join('');
+  $('ruleNote').textContent=(regulated?'규제지역: 1주택 세대는 가점제 제외, ':'비규제지역: 85㎡ 이하 가점 비율은 40% 이하에서 지자체가 정하니 공고문을 확인하세요. ')+(prio?'추첨 물량의 75%는 무주택 세대에 먼저 배정됩니다.':'지방 비규제지역은 추첨 시 무주택 우선 배정이 없습니다.');
+}
+function tiered(K,A,f,d,myG,myBand,ex,myEx,ranked){
+  // 우선 50% → 일반 20% → 추첨 30%. d: 집단 비율(앞이 우선순위 높음), ex: 1·2단계 참여 불가 비율
+  const Ks=[Math.round(K*.5),Math.round(K*.2)];Ks.push(Math.max(0,K-Ks[0]-Ks[1]));
+  let pool=d.map(()=>0),miss=1,out=[];const el=1-ex;
+  for(let t=0;t<2;t++){
+    d.forEach((x,g)=>pool[g]+=A*el*f[t]*x);
+    let p=0;
+    if(!myEx&&myBand<=t&&Ks[t]>0){
+      if(ranked){const better=pool.slice(0,myG).reduce((a,b)=>a+b,0),same=Math.max(1,pool[myG]);p=Math.min(1,Math.max(0,(Ks[t]-better)/same))}
+      else p=Math.min(1,Ks[t]/Math.max(1,pool.reduce((a,b)=>a+b,0)));
+    }
+    out.push(miss*p);miss*=1-p;
+    let k=Ks[t];for(let g=0;g<pool.length&&k>0;g++){const tk=Math.min(pool[g],k);pool[g]-=tk;k-=tk}
+  }
+  const rem=pool.reduce((a,b)=>a+b,0)+A*el*f[2]+A*ex;
+  const p3=Ks[2]>0?Math.min(1,Ks[2]/Math.max(1,rem)):0;out.push(miss*p3);
+  return{Ks,out,p:out.reduce((a,b)=>a+b,0)};
+}
+function spCalc(score,own){
+  const T=st.spT;const body=$('spBody');
+  body.hidden=T==='none';if(T==='none'){$('spScore').textContent='';return null}
+  const tier=['nh','fs','nb'].includes(T),cutT=T==='mc'||T==='op';
+  $('spTier').hidden=!tier;$('spMc').hidden=T!=='mc';$('spCut').hidden=!cutT;
+  $('kidsW').hidden=T!=='nh';$('marW').hidden=T!=='fs';
+  $('spAss').hidden=!tier;$('dKW').hidden=T!=='nh';$('dSW').hidden=T!=='fs';
+  if(tier){const cur=$('inc').value;opt($('inc'),INC[T].map((t,i)=>[i,t]));$('inc').value=cur||0;st.inc=$('inc').value}
+  $('spCutLbl').textContent=T==='mc'?'예상 최저 당첨 배점 (100점 만점)':'예상 최저 당첨가점 (84점 만점)';
+  const K=Math.round(num('spN',1,1e4)),A=Math.max(1,Math.round(K*num('spR',.1,1e4)));
+  let note='',rows=[],p=0;
+  const small=SPT[T].small&&st.sz==='l';
+  if(small){note='신혼부부·생애최초·신생아 특공은 전용 85㎡ 이하에만 배정됩니다. 면적을 바꾸거나 다른 유형을 고르세요.'}
+  else if(own&&T!=='mc'){note=`${SPT[T].n} 특공은 무주택 세대 구성원만 신청할 수 있습니다.`}
+  else if(own&&T==='mc'){note='다자녀 특공도 무주택 세대 구성원 요건이 있습니다.'}
+  else if(tier){
+    const f=[num('f1',0,100)/100,num('f2',0,100)/100];f.push(Math.max(0,1-f[0]-f[1]));
+    let d=[1],myG=0,ex=0,myEx=false,ranked=false;
+    if(T==='nh'){let k=String(st.dK).split(/[,\s/]+/).map(Number).filter(x=>isFinite(x));if(k.length!==4)k=[45,35,15,5];const s=k.reduce((a,b)=>a+b,0)||1;
+      d=[k[3],k[2],k[1],k[0]].map(x=>x/s);myG=3-(+st.kids);ranked=true}
+    if(T==='fs'){ex=num('dS',0,100)/100;myEx=st.mar==='0'}
+    const r=A<=K?{Ks:[K,0,0],out:[1,0,0],p:1}:tiered(K,A,f,d,myG,+st.inc,ex,myEx,ranked);
+    p=r.p;
+    rows=[['우선공급',r.out[0],`${r.Ks[0]}세대`],['일반공급',r.out[1],`${r.Ks[1]}세대`],['추첨공급',r.out[2],`${r.Ks[2]}세대, 앞 단계 낙첨자 포함`]];
+    if(T==='nh')note=+st.kids>0?'자녀가 있으면 1순위입니다. 같은 순위 안에서는 미성년 자녀가 많은 순, 같으면 추첨입니다.':'무자녀(예비신혼 포함)는 2순위라 우선·일반 단계에서 1순위가 남아야 기회가 생깁니다.';
+    if(T==='fs')note=myEx?'미혼·무자녀는 추첨 30% 물량만 신청할 수 있고, 1인 가구는 60㎡ 이하만 가능합니다.':'생애최초는 각 단계 안에서 추첨으로 뽑아 가점 영향이 없습니다. 5년 이상 소득세 납부 요건을 확인하세요.';
+    if(T==='nb')note='만 2세 미만 자녀(태아·입양 포함)가 있으면 혼인기간과 관계없이 신청할 수 있습니다. 각 단계는 추첨입니다.';
+  }else{
+    const sc=T==='mc'?['mcK','mcY','mcG','mcH','mcR','mcT'].reduce((a,k)=>a+ +st[k],0):score;
+    $('spScore').textContent=T==='mc'?`${sc} / 100`:`${sc} / 84`;
+    const cut=num('spC',0,100),u=num('spU',.5,15);
+    p=A<=K?1:Phi((sc-cut+.5)/u);
+    rows=[[T==='mc'?'배점 순 선정':'가점 순 선정',p,`${K}세대, 커트라인 ≈${cut}점`]];
+    note=T==='mc'?'동점이면 미성년 자녀 수가 많은 사람, 그다음 신청자 나이가 많은 사람이 우선입니다.':'만 65세 이상 직계존속을 3년 이상 부양한 무주택 세대주가 대상이며, 일반공급과 같은 84점 가점으로 뽑습니다.';
+  }
+  if(T!=='mc'&&T!=='op')$('spScore').textContent='';
+  $('spNote').textContent=note;
+  if(small||own)rows=[['신청 불가',0,'자격 요건 미충족']],p=0;
+  return{p,rows};
+}
+const setSpN=()=>{if(st.spT!=='none'&&typeof DJ!=='undefined'&&DJ&&st.dj){const d=DJ.danji.find(x=>x.id===st.dj),t=d&&d.types.find(x=>x.ty===st.djT);if(t&&t.sp[st.spT]>0){$('spN').value=t.sp[st.spT];st.spN=t.sp[st.spT];if(t.q&&t.q[st.spT]!=null){const r=Math.max(.1,+(t.q[st.spT]/t.sp[st.spT]).toFixed(2));$('spR').value=r;st.spR=r}return}}if(st.spT!=='none'){const v=Math.max(1,Math.round(num('nn',1,1e5)*SPT[st.spT].r/GEN));$('spN').value=v;st.spN=v}};
+const setRatio=()=>{$('gr').value=RATIO[$('rg').value][$('sz').value];};
+$('rg').addEventListener('change',()=>{setRatio();calc()});
+$('sz').addEventListener('change',()=>{setRatio();calc()});
+ids.forEach(k=>$(k).addEventListener('input',calc));
+const segBind=(attr,key,after)=>document.querySelectorAll(`[data-${attr}]`).forEach(b=>{
+  const sync=()=>document.querySelectorAll(`[data-${attr}]`).forEach(x=>x.setAttribute('aria-pressed',String(x.dataset[attr]==String(st[key]))));
+  b.addEventListener('click',()=>{st[key]=b.dataset[attr];sync();after&&after();calc()});sync()});
+const cmShow=()=>{$('cmD').hidden=st.cm!=='d';$('cmE').hidden=st.cm==='d'};
+segBind('own','own');segBind('cm','cm',cmShow);cmShow();segBind('sp','spT',setSpN);
+calc();
+
+// ── 단지 데이터 (청약홈 공공데이터) ──
+let DJ=null,MED={};
+const fmtTy=t=>{const m=t.match(/^0*(\d+)\.(\d+)([A-Z]*)/);return m?`${m[1]}${m[3]||''}`:t};
+const tyAr=t=>parseFloat(t);
+const r1=(t,k)=>{const c=t.c&&t.c[k];if(!c||c[0]==null)return null;return c[1]!=null?c[1]:(t.g?+(c[0]/t.g).toFixed(2):null)};
+function djList(){const q=$('djQ').value.trim();const L=DJ.danji.filter(d=>!q||(d.nm+d.sido+d.addr).includes(q));
+  $('djS').innerHTML='<option value="">— 직접 입력 —</option>'+L.map(d=>`<option value="${d.id}">${d.nm} · ${d.sido} · ${d.pub.slice(5).replace('-','/')} 공고${d.types.some(t=>t.c)?'':' · 접수 전'}</option>`).join('');
+  if(st.dj&&L.some(d=>d.id===st.dj))$('djS').value=st.dj}
+function djShow(id,ty,apply){
+  const d=DJ.danji.find(x=>x.id===id);st.dj=id||'';
+  $('djInfo').hidden=!d;
+  if(!d){$('djT').innerHTML='';try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}save();return}
+  $('djS').value=id;
+  $('djT').innerHTML=d.types.map(t=>`<option value="${t.ty}">${fmtTy(t.ty)}㎡ · 일반 ${t.g}세대</option>`).join('');
+  const t=d.types.find(x=>x.ty===ty)||d.types.find(x=>x.g>0)||d.types[0];$('djT').value=t.ty;st.djT=t.ty;
+  try{if(location.hash!=='#d'+id)history.replaceState(null,'','#d'+id)}catch(e){}
+  const rgN={tg:'투기과열지구',cg:'청약과열지역',nm:'비규제 · 수도권/광역시',nl:'비규제 · 지방'}[d.rg];
+  const done=d.types.some(x=>x.c);
+  $('djLine').innerHTML=`<span class="tag">${rgN}</span><b>${d.nm}</b> · ${d.addr}<br>공고 ${d.pub} · 1순위 접수 ${d.rc||'-'} · 발표 ${d.win||'-'}${d.pt?' · 공공택지':''} · <a href="${d.url}" target="_blank" rel="noopener">청약홈 공고 보기</a>`;
+  const sk=['nh','fs','nb','mc','op'],sn={nh:'신혼',fs:'생애최초',nb:'신생아',mc:'다자녀',op:'노부모'};
+  $('djTbl').innerHTML='<thead><tr><th>주택형</th><th>일반</th><th>1순위 해당지역</th><th>최저/평균 가점</th><th>특공 배정 (신청)</th><th>분양가 최고</th></tr></thead><tbody>'+d.types.map(x=>{
+    const r=r1(x,'1_01'),sc=x.s&&x.s['01'];
+    return `<tr class="${x.ty===t.ty?'on':''}"><td>${fmtTy(x.ty)}㎡</td><td class="n">${x.g}</td><td class="n">${r!=null?r+' : 1':done?'-':'접수 전'}</td><td class="n">${sc?sc[0]+' / '+sc[1]:'-'}</td><td>${sk.filter(k=>x.sp[k]).map(k=>`${sn[k]} ${x.sp[k]}${x.q?` (${x.q[k]})`:''}`).join(', ')||'-'}</td><td class="n">${x.pr?(x.pr/10000).toFixed(2)+'억':'-'}</td></tr>`}).join('')+'</tbody>';
+  if(apply!==false)djApply(d,t);
+  save();
+}
+function djApply(d,t){
+  const ar=tyAr(t.ty),med=MED[d.sido]||MED['전국'];
+  $('rg').value=d.rg;$('sz').value=ar<=60?'s':ar<=85?'m':'l';setRatio();
+  $('nn').value=Math.max(1,t.g);
+  const r=r1(t,'1_01'),sc=t.s&&t.s['01'];
+  let note=[];
+  if(r!=null){$('cr').value=Math.max(.1,r);note.push(`경쟁률은 이 주택형의 실제 1순위 해당지역 결과(${r}:1)입니다.`)}
+  else{$('cr').value=Math.max(.1,med.r);note.push(`아직 접수 전이라 경쟁률은 ${MED[d.sido]?d.sido:'전국'} 최근 민영 단지 1순위 중앙값(${med.r}:1)으로 채웠습니다.`)}
+  if(sc){$('ct').value=sc[0];note.push(`커트라인은 실제 해당지역 최저 당첨가점(${sc[0]}점)입니다.`)}
+  else{$('ct').value=med.s;note.push(`커트라인은 ${MED[d.sido]?d.sido:'전국'} 최근 최저 당첨가점 중앙값(${med.s}점)으로 채웠습니다.`)}
+  st.cm='d';document.querySelectorAll('[data-cm]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.cm==='d')));cmShow();
+  if(st.spT!=='none'){const k=st.spT,n=t.sp[k];if(n>0){$('spN').value=n;if(t.q&&t.q[k]!=null)$('spR').value=Math.max(.1,+(t.q[k]/n).toFixed(2))}}
+  if(d.rg==='nm'||d.rg==='nl')note.push('비규제지역의 85㎡ 이하 가점 비율은 공고문에서 확인해 고쳐 주세요.');
+  $('djNote').textContent=note.join(' ')+' 경쟁률이 1:1 이하면 미달로 계산됩니다.';
+  calc();
+}
+const save=()=>{try{localStorage.setItem('cy-calc',JSON.stringify(st))}catch(e){}};
+const getJ=u=>fetch(u).then(r=>r.ok?r.json():r.json().then(j=>Promise.reject(j.error||r.status),()=>Promise.reject(r.status)));
+let SNAP={},LIVE=false;
+async function djPick(id,ty,apply){
+  const d=DJ&&DJ.danji.find(x=>x.id===id);
+  if(d&&!d.live){
+    if(d.types&&d.types.length)djShow(id,ty,apply);
+    $('djNote').textContent='청약홈에서 최신 경쟁률·가점을 불러오는 중…';
+    try{const j=await getJ('/api/danji/'+id);if(j.types&&j.types.length){d.types=j.types;d.live=true;d.at=j.fetchedAt}}
+    catch(e){d.err=String(e)}
+    if(st.dj!==id&&d.types)return;
+  }
+  if(d&&!(d.types&&d.types.length)){$('djInfo').hidden=false;$('djLine').textContent=d.nm+' — 주택형 정보를 불러오지 못했습니다. 잠시 뒤 다시 골라 주세요.';$('djTbl').innerHTML='';$('djNote').textContent='';return}
+  djShow(id,ty??st.djT,apply);
+  if(d){const when=d.live?`청약홈 실시간 조회 (${new Date(d.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}, 10분 캐시)`:`스냅숏 ${DJ.meta.updated} 기준${d.err?' — 실시간 조회 실패':''}`;$('djNote').textContent+=' 데이터: '+when+'.'}
+}
+(async()=>{
+  try{const j=await getJ('data/danji.json');DJ=j;MED=j.meta.med;j.danji.forEach(d=>SNAP[d.id]=d)}catch(e){}
+  try{const L=await getJ('/api/list');if(L.danji&&L.danji.length){LIVE=true;DJ=DJ||{meta:{updated:'-',med:{}}};DJ.danji=L.danji.map(d=>({...d,types:(SNAP[d.id]||{}).types}));DJ.at=L.fetchedAt}}catch(e){}
+  if(!DJ||!DJ.danji)return;
+  if(!MED['전국'])MED['전국']={r:1,s:50};
+  $('djBand').hidden=false;
+  $('djMeta').textContent=LIVE?`· 청약홈 실시간 · 최근 150일 민영 APT ${DJ.danji.length}개 단지`:`· 청약홈 공공데이터 스냅숏 ${DJ.meta.updated} 기준 · 민영 APT ${DJ.danji.length}개 단지`;
+  djList();
+  const h=(location.hash.match(/^#d(\d+)$/)||[])[1];
+  if(h)djPick(h,null,true);else if(st.dj)djPick(st.dj,st.djT,false);
+  $('djQ').addEventListener('input',djList);
+  $('djS').addEventListener('change',()=>djPick($('djS').value,null,true));
+  $('djT').addEventListener('change',()=>djShow(st.dj,$('djT').value,true));
+  addEventListener('hashchange',()=>{const h=(location.hash.match(/^#d(\d+)$/)||[])[1];if(h&&h!==st.dj)djPick(h,null,true)});
+})();
+}
+</script>
+</body>
+</html>
