@@ -474,10 +474,10 @@ function djApply(d,t){
 }
 const save=()=>{try{localStorage.setItem('cy-calc',JSON.stringify(st))}catch(e){}};
 const getJ=u=>fetch(u).then(r=>r.ok?r.json():r.json().then(j=>Promise.reject(j.error||r.status),()=>Promise.reject(r.status)));
-let SNAP={},LIVE=false;
+let SNAP={},LIVE=false;const API_ON=!/github\.io$/.test(location.hostname);
 async function djPick(id,ty,apply){
   const d=DJ&&DJ.danji.find(x=>x.id===id);
-  if(d&&!d.live){
+  if(d&&!d.live&&API_ON){
     if(d.types&&d.types.length)djShow(id,ty,apply);
     $('djNote').textContent='청약홈에서 최신 경쟁률·가점을 불러오는 중…';
     try{const j=await getJ('/api/danji/'+id);if(j.types&&j.types.length){d.types=j.types;d.live=true;d.at=j.fetchedAt}}
@@ -486,15 +486,15 @@ async function djPick(id,ty,apply){
   }
   if(d&&!(d.types&&d.types.length)){$('djInfo').hidden=false;$('djLine').textContent=d.nm+' — 주택형 정보를 불러오지 못했습니다. 잠시 뒤 다시 골라 주세요.';$('djTbl').innerHTML='';$('djNote').textContent='';return}
   djShow(id,ty??st.djT,apply);
-  if(d){const when=d.live?`청약홈 실시간 조회 (${new Date(d.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}, 10분 캐시)`:`스냅숏 ${DJ.meta.updated} 기준${d.err?' — 실시간 조회 실패':''}`;$('djNote').textContent+=' 데이터: '+when+'.'}
+  if(d){const when=d.live?`청약홈 실시간 조회 (${new Date(d.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}, 10분 캐시)`:`청약홈 공공데이터 ${DJ.meta.updated} 기준 (매일 아침 갱신)${d.err?' — 실시간 조회 실패':''}`;$('djNote').textContent+=' 데이터: '+when+'.'}
 }
 (async()=>{
   try{const j=await getJ('data/danji.json');DJ=j;MED=j.meta.med;j.danji.forEach(d=>SNAP[d.id]=d)}catch(e){}
-  try{const L=await getJ('/api/list');if(L.danji&&L.danji.length){LIVE=true;DJ=DJ||{meta:{updated:'-',med:{}}};DJ.danji=L.danji.map(d=>({...d,types:(SNAP[d.id]||{}).types}));DJ.at=L.fetchedAt}}catch(e){}
+  if(API_ON)try{const L=await getJ('/api/list');if(L.danji&&L.danji.length){LIVE=true;DJ=DJ||{meta:{updated:'-',med:{}}};DJ.danji=L.danji.map(d=>({...d,types:(SNAP[d.id]||{}).types}));DJ.at=L.fetchedAt}}catch(e){}
   if(!DJ||!DJ.danji)return;
   if(!MED['전국'])MED['전국']={r:1,s:50};
   $('djBand').hidden=false;
-  $('djMeta').textContent=LIVE?`· 청약홈 실시간 · 최근 150일 민영 APT ${DJ.danji.length}개 단지`:`· 청약홈 공공데이터 스냅숏 ${DJ.meta.updated} 기준 · 민영 APT ${DJ.danji.length}개 단지`;
+  $('djMeta').textContent=LIVE?`· 청약홈 실시간 · 최근 150일 민영 APT ${DJ.danji.length}개 단지`:`· 청약홈 공공데이터 ${DJ.meta.updated} 기준 (매일 갱신) · 민영 APT ${DJ.danji.length}개 단지`;
   djList();
   const h=(location.hash.match(/^#d(\d+)$/)||[])[1];
   if(h)djPick(h,null,true);else if(st.dj)djPick(st.dj,st.djT,false);
