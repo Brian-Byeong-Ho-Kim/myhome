@@ -436,7 +436,7 @@ const fmtTy=t=>{const m=t.match(/^0*(\d+)\.(\d+)([A-Z]*)/);return m?`${m[1]}${m[
 const tyAr=t=>parseFloat(t);
 const r1=(t,k)=>{const c=t.c&&t.c[k];if(!c||c[0]==null)return null;return c[1]!=null?c[1]:(t.g?+(c[0]/t.g).toFixed(2):null)};
 function djList(){const q=$('djQ').value.trim();const L=DJ.danji.filter(d=>!q||(d.nm+d.sido+d.addr).includes(q));
-  $('djS').innerHTML='<option value="">— 직접 입력 —</option>'+L.map(d=>`<option value="${d.id}">${d.nm} · ${d.sido} · ${d.pub.slice(5).replace('-','/')} 공고${d.types.some(t=>t.c)?'':' · 접수 전'}</option>`).join('');
+  $('djS').innerHTML='<option value="">— 직접 입력 —</option>'+L.map(d=>`<option value="${d.id}">${d.nm} · ${d.sido} · ${d.pub.slice(5).replace('-','/')} 공고${(d.types||[]).some(t=>t.c)?'':(d.types?' · 접수 전':'')}</option>`).join('');
   if(st.dj&&L.some(d=>d.id===st.dj))$('djS').value=st.dj}
 function djShow(id,ty,apply){
   const d=DJ.danji.find(x=>x.id===id);st.dj=id||'';
@@ -475,14 +475,15 @@ function djApply(d,t){
 const save=()=>{try{localStorage.setItem('cy-calc',JSON.stringify(st))}catch(e){}};
 const getJ=u=>fetch(u).then(r=>r.ok?r.json():r.json().then(j=>Promise.reject(j.error||r.status),()=>Promise.reject(r.status)));
 let SNAP={},LIVE=false;const API_ON=!/github\.io$/.test(location.hostname);
+let PEND='';
 async function djPick(id,ty,apply){
-  const d=DJ&&DJ.danji.find(x=>x.id===id);
+  const d=DJ&&DJ.danji.find(x=>x.id===id);PEND=id;
   if(d&&!d.live&&API_ON){
     if(d.types&&d.types.length)djShow(id,ty,apply);
     $('djNote').textContent='청약홈에서 최신 경쟁률·가점을 불러오는 중…';
     try{const j=await getJ('/api/danji/'+id);if(j.types&&j.types.length){d.types=j.types;d.live=true;d.at=j.fetchedAt}}
     catch(e){d.err=String(e)}
-    if(st.dj!==id&&d.types)return;
+    if(PEND!==id)return;
   }
   if(d&&!(d.types&&d.types.length)){$('djInfo').hidden=false;$('djLine').textContent=d.nm+' — 주택형 정보를 불러오지 못했습니다. 잠시 뒤 다시 골라 주세요.';$('djTbl').innerHTML='';$('djNote').textContent='';return}
   djShow(id,ty??st.djT,apply);
