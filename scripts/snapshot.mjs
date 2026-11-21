@@ -9,9 +9,11 @@ const get = makeGet(key);
 const from = daysAgo(150);
 const list = await fetchList(get, from);
 const danji = [];
-for (let i = 0; i < list.length; i += 6) {
-  const part = await Promise.all(list.slice(i, i + 6).map(async d => ({ ...d, types: await fetchTypes(get, d.id) })));
+// 단지 2개씩(동시 요청 8개 이하) 천천히 받아 API 요청 과다(429)를 피한다
+for (let i = 0; i < list.length; i += 2) {
+  const part = await Promise.all(list.slice(i, i + 2).map(async d => ({ ...d, types: await fetchTypes(get, d.id) })));
   danji.push(...part.filter(d => d.types.length));
+  await new Promise(r => setTimeout(r, 300));
 }
 const meta = { updated: daysAgo(0), from, src: '한국부동산원 청약홈 분양정보·경쟁률 조회 서비스 (공공데이터포털)', med: medians(danji) };
 await writeFile(new URL('../public/data/danji.json', import.meta.url), JSON.stringify({ meta, danji }));

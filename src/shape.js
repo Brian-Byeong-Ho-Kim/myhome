@@ -12,10 +12,14 @@ const SKIP = /조합원|취소분|임대|공공분양|토지임대|지분적립/
 const num = v => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
 
 export function makeGet(key, fetchFn = fetch) {
+  // 429(요청 과다)·5xx는 잠깐 기다렸다가 최대 4번 다시 시도한다
   return async path => {
-    const r = await fetchFn(API + path, { headers: { Authorization: 'Infuser ' + key } });
-    if (!r.ok) throw new Error('청약홈 API 응답 ' + r.status);
-    return r.json();
+    for (let i = 0; ; i++) {
+      const r = await fetchFn(API + path, { headers: { Authorization: 'Infuser ' + key } });
+      if (r.ok) return r.json();
+      if (i >= 4 || !(r.status === 429 || r.status >= 500)) throw new Error('청약홈 API 응답 ' + r.status);
+      await new Promise(res => setTimeout(res, 600 * 2 ** i));
+    }
   };
 }
 
