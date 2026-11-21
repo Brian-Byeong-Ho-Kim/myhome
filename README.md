@@ -4,6 +4,8 @@
 
 ## 배포
 
+공개 주소: https://myhome-kr.pages.dev (실시간), https://brian-byeong-ho-kim.github.io/myhome/ (스냅숏)
+
 - Cloudflare Pages (실시간): Git 연결, 빌드 명령 없음, 출력 디렉터리 `public`
 - GitHub Pages (스냅숏): `.github/workflows/pages.yml`
 
